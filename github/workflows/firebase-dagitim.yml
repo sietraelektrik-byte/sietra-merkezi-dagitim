@@ -1,0 +1,76 @@
+name: Basin Bulteni ve Paravan Yapi Dagitimi
+
+on:
+  workflow_dispatch:   # Sizin GitHub panelinden manuel tetiklemeniz icin
+  schedule:
+    - cron: '0 2 * * *' # Her gece saat 02:00'de otomatik calisir
+
+jobs:
+  deploy_orchestrator:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bu Repoyu Klonla
+        uses: actions/checkout@v4
+
+      # 1. MAKALE REPOSUNU İÇERİ ÇEKME (sietraelektrik-byte profil reposu)
+      - name: Makale Reposunu Klonla
+        run: |
+          git clone https://${{ secrets.SEO_PAT }}@github.com/sietraelektrik-byte/sietraelektrik-byte.git ./makale-kaynak
+
+      # 2. ÜRÜN REPOSUNU İÇERİ ÇEKME (ledlamba-arsiv reposu)
+      - name: Urun Reposunu Klonla
+        run: |
+          git clone https://${{ secrets.SEO_PAT }}@github.com/sietraelektrik-byte/ledlamba-arsiv.git ./urun-kaynak
+
+      - name: Node.js Kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      # 3. İKİ FARKLI KAYNAKTAKİ MD DOSYALARINI HTML'E ÇEVİRİP KLASÖRLERE DAĞITMA
+      - name: Markdown Dosyalarini Firebase Klasorlerine Donustur
+        run: |
+          node -e "
+          const fs = require('fs');
+          const path = require('path');
+
+          function mdToHtml(title, content, canonical) {
+            return \`<!DOCTYPE html><html lang='tr'><head><meta charset='UTF-8'><title>\${title} | Sietra Teknik</title><link rel='canonical' href='\${canonical}'></head><body style='font-family:sans-serif;padding:20px;max-width:800px;margin:0 auto;'><main>\${content}</main></body></html>\`;
+          }
+
+          // Firebase public alt klasorlerini hazirla
+          fs.mkdirSync('./public/arsiv', { recursive: true });
+          fs.mkdirSync('./public/urunler', { recursive: true });
+
+          // A) Makaleleri Isle (sietraelektrik-byte/arsiv klasorunden alır)
+          if (fs.existsSync('./makale-kaynak/arsiv')) {
+            fs.readdirSync('./makale-kaynak/arsiv').forEach(file => {
+              if (path.extname(file) === '.md') {
+                let content = fs.readFileSync(path.join('./makale-kaynak/arsiv', file), 'utf8');
+                let slug = path.basename(file, '.md');
+                let html = mdToHtml(slug, content, 'https://ledlamba.com/' + slug + '/');
+                fs.writeFileSync(path.join('./public/arsiv', slug + '.html'), html);
+              }
+            });
+          }
+
+          // B) Urunleri Isle (ledlamba-arsiv reposunun ana dizinindeki .md dosyalarini alir)
+          if (fs.existsSync('./urun-kaynak')) {
+            fs.readdirSync('./urun-kaynak').forEach(file => {
+              if (path.extname(file) === '.md') {
+                let content = fs.readFileSync(path.join('./urun-kaynak', file), 'utf8');
+                let slug = path.basename(file, '.md');
+                let html = mdToHtml(slug, content, 'https://ledlamba.com/urun/' + slug + '/');
+                fs.writeFileSync(path.join('./public/urunler', slug + '.html'), html);
+              }
+            });
+          }
+          "
+
+      # 4. FIREBASE'E TEK SEFERDE TOPLU DEPLOY
+      - name: Firebase'e Toplu Deploy
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          projectId: ledlamba-arsiv
