@@ -1,9 +1,9 @@
 name: Basin Bulteni ve Paravan Yapi Dagitimi
 
 on:
-  workflow_dispatch:   # Sizin GitHub panelinden manuel tetiklemeniz icin
+  workflow_dispatch:   # Manuel tetikleme icin
   schedule:
-    - cron: '0 2 * * *' # Her gece saat 02:00'de otomatik calisir
+    - cron: '0 2 * * *' # Her gece 02:00'de otomatik calisir
 
 jobs:
   deploy_orchestrator:
@@ -12,12 +12,12 @@ jobs:
       - name: Bu Repoyu Klonla
         uses: actions/checkout@v4
 
-      # 1. MAKALE REPOSUNU İÇERİ ÇEKME (sietraelektrik-byte profil reposu)
+      # 1. MAKALE REPOSUNU İÇERİ ÇEKME
       - name: Makale Reposunu Klonla
         run: |
           git clone https://${{ secrets.SEO_PAT }}@github.com/sietraelektrik-byte/sietraelektrik-byte.git ./makale-kaynak
 
-      # 2. ÜRÜN REPOSUNU İÇERİ ÇEKME (ledlamba-arsiv reposu)
+      # 2. ÜRÜN REPOSUNU İÇERİ ÇEKME
       - name: Urun Reposunu Klonla
         run: |
           git clone https://${{ secrets.SEO_PAT }}@github.com/sietraelektrik-byte/ledlamba-arsiv.git ./urun-kaynak
@@ -27,7 +27,20 @@ jobs:
         with:
           node-version: 18
 
-      # 3. İKİ FARKLI KAYNAKTAKİ MD DOSYALARINI HTML'E ÇEVİRİP KLASÖRLERE DAĞITMA
+      # 3. KLASÖRLERİ VE FIREBASE.JSON AYARINI OLUŞTURMA
+      - name: Klasorleri ve Ayar Dosyalarini Hazirla
+        run: |
+          # Firebase'in aradığı public klasörünü kökten oluşturuyoruz
+          mkdir -p ./public/arsiv
+          mkdir -p ./public/urunler
+
+          # Ana sayfa boş kalmasın diye geçici bir index.html koyuyoruz
+          echo "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Sietra Teknik Arşiv</title></head><body style='font-family:sans-serif; padding:50px; text-align:center;'><h1>Sietra Teknik Dağıtım Merkezi</h1><p>Arşiv ve Ürünler başarıyla bağlandı.</p><p><a href='/arsiv/'>Makaleler</a> | <a href='/urunler/'>Ürünler</a></p></body></html>" > ./public/index.html
+
+          # Firebase'e public klasörünü hedef gösteren firebase.json dosyasını otomatik üretiyoruz
+          echo '{"hosting": {"public": "public", "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]}}' > ./firebase.json
+
+      # 4. MD DOSYALARINI HTML'E ÇEVİRİP KLASÖRLERE DAĞITMA
       - name: Markdown Dosyalarini Firebase Klasorlerine Donustur
         run: |
           node -e "
@@ -38,11 +51,7 @@ jobs:
             return \`<!DOCTYPE html><html lang='tr'><head><meta charset='UTF-8'><title>\${title} | Sietra Teknik</title><link rel='canonical' href='\${canonical}'></head><body style='font-family:sans-serif;padding:20px;max-width:800px;margin:0 auto;'><main>\${content}</main></body></html>\`;
           }
 
-          // Firebase public alt klasorlerini hazirla
-          fs.mkdirSync('./public/arsiv', { recursive: true });
-          fs.mkdirSync('./public/urunler', { recursive: true });
-
-          // A) Makaleleri Isle (sietraelektrik-byte/arsiv klasorunden alır)
+          // A) Makaleleri İşle
           if (fs.existsSync('./makale-kaynak/arsiv')) {
             fs.readdirSync('./makale-kaynak/arsiv').forEach(file => {
               if (path.extname(file) === '.md') {
@@ -54,7 +63,7 @@ jobs:
             });
           }
 
-          // B) Urunleri Isle (ledlamba-arsiv reposunun ana dizinindeki .md dosyalarini alir)
+          // B) Ürünleri İşle
           if (fs.existsSync('./urun-kaynak')) {
             fs.readdirSync('./urun-kaynak').forEach(file => {
               if (path.extname(file) === '.md') {
@@ -67,7 +76,7 @@ jobs:
           }
           "
 
-      # 4. FIREBASE'E TEK SEFERDE TOPLU DEPLOY
+      # 5. FIREBASE'E TEK SEFERDE TOPLU DEPLOY
       - name: Firebase'e Toplu Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
