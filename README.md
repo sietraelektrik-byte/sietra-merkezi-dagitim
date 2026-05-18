@@ -1,0 +1,1 @@
+# sietra-merkezi-dagitim
